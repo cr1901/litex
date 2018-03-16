@@ -4,6 +4,7 @@
 import os
 import subprocess
 import sys
+import logging
 
 from migen.fhdl.structure import _Fragment
 
@@ -68,14 +69,19 @@ def _run_vivado(build_name, vivado_path, source, ver=None):
         # look for a version in a subdirectory named "Vivado"
         # under the current directory.
         paths_to_try = [vivado_path, os.path.join(vivado_path, "Vivado")]
+        logging.basicConfig(level=logging.DEBUG)
         for p in paths_to_try:
+            logging.info("Searching for Vivado in {}.".format(p))
             try:
                 settings = common.settings(p, ver)
-            except OSError:
+            except OSError as e:
+                logging.info("Tools not found in {}: {}.".format(p, e))
                 continue
             break
         else:
             raise OSError("Unable to locate Vivado directory or settings.")
+        logging.info("Settings found at {}.".format(settings))
+        exit()
 
         build_script_contents += "source " + settings + "\n"
         build_script_contents += "vivado -mode batch -source " + build_name + ".tcl\n"

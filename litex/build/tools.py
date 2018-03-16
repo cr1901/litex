@@ -4,6 +4,7 @@ from distutils.version import StrictVersion
 import re
 import subprocess
 import sys
+import logging
 
 
 def language_by_filename(name):
@@ -31,10 +32,13 @@ def versions(path):
     for n in os.listdir(path):
         full = os.path.join(path, n)
         if not os.path.isdir(full):
+            # logging.info("{} is not a directory.".format(full))
             continue
         try:
+            # logging.info("Checking if dir {} is a StrictVersion.".format(n))
             yield StrictVersion(n)
         except ValueError:
+            # logging.info("{} is not a candidate directory for tools.".format(full))
             continue
 
 

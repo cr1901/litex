@@ -6,6 +6,7 @@ try:
     _have_colorama = True
 except ImportError:
     _have_colorama = False
+import logging
 
 from migen.fhdl.structure import *
 from migen.fhdl.specials import Instance
@@ -34,10 +35,12 @@ if _have_colorama:
 def settings(path, ver=None, sub=None):
     if ver is None:
         vers = list(tools.versions(path))
+
         if not vers:
             raise OSError("no version directory for Xilinx tools found in "
                           + path)
         ver = max(vers)
+        logging.info("Chosen candidate for tools directory: {}".format(ver))
 
     full = os.path.join(path, str(ver))
     if sub:
