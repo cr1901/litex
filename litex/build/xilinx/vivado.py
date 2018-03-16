@@ -81,7 +81,6 @@ def _run_vivado(build_name, vivado_path, source, ver=None):
         else:
             raise OSError("Unable to locate Vivado directory or settings.")
         logging.info("Settings found at {}.".format(settings))
-        exit()
 
         build_script_contents += "source " + settings + "\n"
         build_script_contents += "vivado -mode batch -source " + build_name + ".tcl\n"
