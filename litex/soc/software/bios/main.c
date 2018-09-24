@@ -413,7 +413,7 @@ static void do_command(char *c)
 		printf("Command not found\n");
 }
 
-extern unsigned int _ftext, _edata;
+extern unsigned int _ftext, _edata, _fdata, _erodata;
 
 static void crcbios(void)
 {
@@ -421,16 +421,19 @@ static void crcbios(void)
 	unsigned int length;
 	unsigned int expected_crc;
 	unsigned int actual_crc;
+	unsigned int * eimage;
 
 	/*
-	 * _edata is located right after the end of the flat
+	 * eimage is located right after the end of the flat
 	 * binary image. The CRC tool writes the 32-bit CRC here.
-	 * We also use the address of _edata to know the length
+	 * We also use the address of eimage (which must be derived from
+	 * the length of the .data section) to know the length
 	 * of our code.
 	 */
 	offset_bios = (unsigned int)&_ftext;
-	expected_crc = _edata;
-	length = (unsigned int)&_edata - offset_bios;
+	eimage = &_erodata + (&_edata - &_fdata);
+	expected_crc = *eimage;
+	length = (unsigned int)eimage - offset_bios;
 	actual_crc = crc32((unsigned char *)offset_bios, length);
 	if(expected_crc == actual_crc)
 		printf("BIOS CRC passed (%08x)\n", actual_crc);

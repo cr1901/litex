@@ -26,7 +26,7 @@ SECTIONS
 		_erodata = .;
 	} > rom
 
-	.data :
+	.data : AT (ADDR(.rodata) + SIZEOF (.rodata))
 	{
 		. = ALIGN(4);
 		_fdata = .;
@@ -39,7 +39,7 @@ SECTIONS
 		FILL(0);
 		. = ALIGN(4);
 		_edata = .;
-	} > rom
+	} > sram
 
 	.bss :
 	{
