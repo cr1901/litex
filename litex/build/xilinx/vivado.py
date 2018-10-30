@@ -244,9 +244,7 @@ class XilinxVivadoToolchain:
             if synth_mode == "yosys":
                 common._run_yosys(platform.device, sources, platform.verilog_include_paths, build_name)
             else:
-                raise OSError("Error!")
-            _run_vivado(build_name, toolchain_path, source)
-
+                _run_vivado(build_name, toolchain_path, source)
 
         os.chdir(cwd)
 
