@@ -2608,8 +2608,8 @@ class LiteXSoC(SoC):
                 linker = True)
             )
             base = self.bus.regions[name].origin
-        hres = int(timings.split("@")[0].split("x")[0])
-        vres = int(timings.split("@")[0].split("x")[1])
+        hres = int(timings.split("@")[0].split("x")[0]) // 2
+        vres = int(timings.split("@")[0].split("x")[1]) // 2
         vfb = VideoFrameBuffer(self.sdram.crossbar.get_port(),
             hres                  = hres,
             vres                  = vres,

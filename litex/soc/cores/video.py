@@ -679,7 +679,7 @@ class VideoFrameBuffer(LiteXModule):
             # ... and then Data-Width Conversion.
             self.conv = ClockDomainsRenamer(clock_domain)(stream.Converter(dram_port.data_width, depth))
             self.comb += self.cdc.source.connect(self.conv.sink)
-            video_pipe_source = self.conv.source
+            unbuffered_video_pipe_source = self.conv.source
         # Elsif DRAM Data Width <= depth or Video clock is slower than sys_clk:
         else:
             # Do Data-Width Conversion first...
@@ -693,7 +693,24 @@ class VideoFrameBuffer(LiteXModule):
                     self.cdc.sink.data[ 0: 8].eq(self.conv.source.data[16:24]),
                     self.cdc.sink.data[16:24].eq(self.conv.source.data[ 0: 8]),
                 ]
-            video_pipe_source = self.cdc.source
+            unbuffered_video_pipe_source = self.cdc.source
+
+        linebuf = ClockDomainsRenamer(clock_domain)(LineBuffer(depth=depth))
+        linebuf = ResetInserter()(linebuf)
+        self.linebuf = linebuf
+
+        pixel2x = ClockDomainsRenamer(clock_domain)(PixelDoubler(depth=depth))
+        pixel2x = ResetInserter()(pixel2x)
+        self.pixel2x = pixel2x
+
+        self.specials += MultiReg(self.dma.fsm.reset, self.linebuf.fsm.reset, clock_domain)
+        self.specials += MultiReg(self.dma.fsm.reset, self.pixel2x.fsm.reset, clock_domain)
+
+        self.comb += [
+            unbuffered_video_pipe_source.connect(self.linebuf.sink),
+            self.linebuf.source.connect(self.pixel2x.sink),
+        ]
+        video_pipe_source = self.pixel2x.source
 
         # Video Synchronization/Generation.
         first = Signal()
@@ -762,6 +779,122 @@ class VideoFrameBuffer(LiteXModule):
 
         # Underflow.
         self.comb += self.underflow.eq(~source.valid)
+
+# Video Scaler --------------------------------------------------------------------------------
+class LineBuffer(LiteXModule):
+    """Line Buffer for scaling output vertically."""
+    def __init__(self, depth):
+        self.sink  = sink = stream.Endpoint([("data", depth)])
+        self.source = source = stream.Endpoint([("data", depth)])
+
+        line_mem    = Memory(width=depth, depth=1920//2)
+        line_wrport = line_mem.get_port(write_capable=True)
+        line_rdport = line_mem.get_port(has_re=True)
+        self.specials += line_mem, line_rdport, line_wrport
+
+        fsm = FSM(reset_state="FILL")
+        fsm = ResetInserter()(fsm)
+        self.submodules.fsm = fsm
+        self.in_empty = Signal(1)
+        self.fifo_sink_ready = Signal(1)
+        self.fifo_source_valid = Signal(1)
+
+        line_offset = Signal(max=1920//2)
+        self.saved_last = saved_last = Signal(1)
+
+        fsm.act("FILL",
+            source.valid.eq(sink.valid),
+            source.data.eq(sink.data),
+            source.last.eq(0),
+            NextValue(saved_last, sink.last),
+
+            line_wrport.dat_w.eq(sink.data),
+            sink.ready.eq(source.ready),
+
+            If(sink.valid & sink.ready,
+                line_wrport.adr.eq(line_offset),
+                line_wrport.we.eq(1),
+
+                If(line_offset != ((1920//2) - 1),
+                    NextValue(line_offset, line_offset + 1),
+                ).Else(
+                    # Preemptively load the first pixel, in case downstream is
+                    # immediately ready to accept data.
+                    line_rdport.adr.eq(0),
+                    line_rdport.re.eq(1),
+                    NextValue(line_offset, 0),
+                    NextState("EMPTY")
+                )
+            ),
+        )
+
+        fsm.act("EMPTY",
+            source.valid.eq(1),
+            source.data.eq(line_rdport.dat_r),
+            source.last.eq(0),
+            sink.ready.eq(0),
+
+            If(line_offset == ((1920//2) - 1),
+                source.last.eq(saved_last)
+            ),
+
+            If(source.valid & source.ready,
+                If(line_offset != ((1920//2) - 1),
+                    NextValue(line_offset, line_offset + 1),
+                    line_rdport.adr.eq(line_offset + 1),
+                    line_rdport.re.eq(1)
+                ).Else(
+                    NextValue(line_offset, 0),
+                    NextState("FILL")
+                )
+            ),
+        )
+
+
+class PixelDoubler(LiteXModule):
+    """Pixel Doubler for scaling output horizontally."""
+    def __init__(self, depth):
+        self.sink  = sink = stream.Endpoint([("data", depth)])
+        self.source = source = stream.Endpoint([("data", depth)])
+
+        fsm = FSM(reset_state="FILL")
+        fsm = ResetInserter()(fsm)
+        self.submodules.fsm = fsm
+
+        # Connect last
+        self.saved_last = saved_last = Signal(1)
+        curr_pixel = Signal(depth)
+
+        fsm.act("FILL",
+            sink.ready.eq(source.ready),
+            source.valid.eq(sink.valid),
+            source.data.eq(sink.data),
+            source.last.eq(0),
+
+            If(fsm.reset,
+                sink.ready.eq(0),
+                NextValue(curr_pixel, 0),
+                NextValue(saved_last, 0)
+            ),
+
+            If(sink.valid & sink.ready,
+                NextValue(curr_pixel, sink.data),
+                NextValue(saved_last, sink.last),
+                NextState("REPEAT_H")
+            ),
+        )
+
+        fsm.act("REPEAT_H",
+            sink.ready.eq(0),
+            source.last.eq(saved_last),
+            source.data.eq(curr_pixel),
+            source.valid.eq(1),
+
+            If(source.ready & source.valid,
+                NextState("FILL")
+            ),
+        )
+
 
 # Video PHYs ---------------------------------------------------------------------------------------
 
